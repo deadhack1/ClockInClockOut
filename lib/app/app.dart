@@ -1,8 +1,10 @@
+import 'package:clock_in_clock_out/app/router.dart';
+import 'package:clock_in_clock_out/app/theme.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class ClockInClockOut {
+class ClockInClockOut extends ConsumerWidget {
   const ClockInClockOut({super.key});
 
   @override
@@ -13,6 +15,6 @@ class ClockInClockOut {
       title: 'Clock In/Out',
       theme: buildTheme(),
       routerConfig: router,
-    );;
+    );
   }
 }
