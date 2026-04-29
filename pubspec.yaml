@@ -33,6 +33,8 @@ dependencies:
 #  get:
   go_router:
   flutter_riverpod:
+  intl:
+  supabase_flutter:
 
 
   # The following adds the Cupertino Icons font to your application.

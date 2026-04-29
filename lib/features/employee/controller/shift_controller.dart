@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/timesheet_entry.dart';
+import 'timesheet_controller.dart';
 
 class ShiftState {
   final bool isClockedIn;
@@ -78,7 +81,6 @@ class ShiftController extends Notifier<ShiftState> {
   void clockOut() {
     if (!state.isClockedIn) return;
 
-    // End break if running
     if (state.onBreak) {
       endBreak();
     }
@@ -86,11 +88,30 @@ class ShiftController extends Notifier<ShiftState> {
     _timer?.cancel();
     _timer = null;
 
+    final clockOutAt = DateTime.now();
+    final clockInAt = state.clockInAt;
+
+    if (clockInAt != null) {
+      final worked = state.elapsed;
+
+      ref.read(timesheetControllerProvider.notifier).addEntry(
+        TimesheetEntry(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          clockIn: clockInAt,
+          clockOut: clockOutAt,
+          worked: worked,
+          breaks: state.breakElapsed,
+        ),
+      );
+    }
+
     state = state.copyWith(
       isClockedIn: false,
       clockInAt: null,
+      elapsed: Duration.zero,
       onBreak: false,
       breakStartedAt: null,
+      breakElapsed: Duration.zero,
     );
   }
 

@@ -1,7 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/admin/screens/admin_dashboard.dart';
+import '../features/employee/screen/clock_screen.dart';
 import '../features/employee/screen/employee_shell.dart';
+import '../features/employee/screen/pay_screen.dart';
+import '../features/employee/screen/timesheet_screen.dart';
 
 // import '../features/admin/screens/admin_dashboard_screen.dart';
 // import '../features/employee/screens/employee_shell.dart';
