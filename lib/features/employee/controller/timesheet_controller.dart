@@ -22,13 +22,24 @@ class TimesheetController extends AsyncNotifier<List<TimesheetEntry>> {
   }
 
   Future<void> addEntry(TimesheetEntry entry) async {
-    await _repo.addEntry(
-      clockIn: entry.clockIn,
-      clockOut: entry.clockOut,
-      worked: entry.worked,
-      breaks: entry.breaks,
-    );
+    print("Trying to add the entry");
+    try {
+      await _repo.addEntry(
+        clockIn: entry.clockIn,
+        clockOut: entry.clockOut,
+        worked: entry.worked,
+        breaks: entry.breaks,
+      );
+    } on Exception catch (e) {
+      print("the exact nature of the exception is $e");
+      // TODO
+    }
 
+    await refreshEntries();
+  }
+
+  Future<void> clearAll() async {
+    await _repo.clearAll();
     await refreshEntries();
   }
 }

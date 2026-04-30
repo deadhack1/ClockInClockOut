@@ -1,122 +1,138 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:go_router/go_router.dart';
 
 import '../../../core/formatters/duration_formatter.dart';
-import '../../employee/controller/pay_controller.dart';
-import '../../employee/controller/timesheet_controller.dart';
+import '../providers/admin_payroll_provider.dart';
+import '../providers/admin_timesheet_provider.dart';
 
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final entriesAsync = ref.watch(timesheetControllerProvider);
-    final pay = ref.watch(paySummaryProvider);
+    final entriesAsync = ref.watch(adminTimesheetProvider);
+    final payroll = ref.watch(adminPayrollProvider);
 
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: entriesAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Admin Dashboard',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go('/employee/clock'),
+        ),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: entriesAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Error: $e')),
+            data: (entries) {
+              final totalShifts = entries.length;
+              final totalHours = entries.fold<Duration>(
+                Duration.zero,
+                (sum, e) => sum + e.worked,
+              );
 
-          error: (e, _) => Center(child: Text('Error: $e')),
+              final totalPay = payroll.fold<double>(
+                0,
+                (sum, p) => sum + p.totalPay,
+              );
 
-          data: (entries) {
-            final totalShifts = entries.length;
-
-            final totalHours = entries.fold<Duration>(
-              Duration.zero,
-                  (sum, e) => sum + e.worked,
-            );
-
-            return Column(
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Admin Dashboard',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Stats Grid
+                  SizedBox(
+                    height: 200,
+                    child: GridView.count(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1.6,
+                      children: [
+                        _AdminCard(
+                          title: 'Total Shifts',
+                          value: '$totalShifts',
+                        ),
+                        _AdminCard(
+                          title: 'Staff Hours',
+                          value: formatHm(totalHours),
+                        ),
+                        _AdminCard(
+                          title: 'Total Payroll',
+                          value: '\$${totalPay.toStringAsFixed(2)}',
+                        ),
+                        _AdminCard(
+                          title: 'Active Staff',
+                          value: '${payroll.length}',
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Stats
-                Expanded(
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.45,
-                    children: [
-                      _AdminCard(
-                        title: 'Completed Shifts',
-                        value: '$totalShifts',
-                      ),
-                      _AdminCard(
-                        title: 'Worked Hours',
-                        value: formatHm(totalHours),
-                      ),
-                      _AdminCard(
-                        title: 'Payroll Estimate',
-                        value: '\$${pay.estimatedPay.toStringAsFixed(2)}',
-                      ),
-                      _AdminCard(
-                        title: 'Overtime',
-                        value: formatHm(pay.overtime),
-                      ),
-                    ],
                   ),
-                ),
 
-                const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
-                // Activity list
-                Expanded(
-                  child: entries.isEmpty
-                      ? Center(
-                    child: Text(
-                      'No staff activity yet',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
+                  Text(
+                    'Recent Staff Activity',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
                     ),
-                  )
-                      : ListView.separated(
-                    itemCount: entries.length,
-                    separatorBuilder: (_, __) =>
-                    const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      final e = entries[index];
-
-                      return ListTile(
-                        tileColor: cs.surface,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.person),
-                        ),
-                        title: const Text('Employee Shift'),
-                        subtitle: Text(
-                          'Worked ${formatHm(e.worked)}',
-                        ),
-                        trailing: Text(
-                          '${e.clockOut.hour}:${e.clockOut.minute.toString().padLeft(2, '0')}',
-                        ),
-                      );
-                    },
                   ),
-                ),
-              ],
-            );
-          },
+                  const SizedBox(height: 12),
+
+                  Expanded(
+                    child: entries.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No staff activity yet',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: entries.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, index) {
+                              final e = entries[index];
+
+                              return ListTile(
+                                tileColor: cs.surfaceContainer,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                leading: const CircleAvatar(
+                                  child: Icon(Icons.person),
+                                ),
+                                title: Text(
+                                  e.employeeName,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: Text(
+                                  'Worked ${formatHm(e.worked)} • ${e.clockIn.month}/${e.clockIn.day}',
+                                ),
+                                trailing: Text(
+                                  '${e.clockOut.hour}:${e.clockOut.minute.toString().padLeft(2, '0')}',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -139,21 +155,25 @@ class _AdminCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: cs.surface,
+        color: cs.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: cs.outlineVariant.withOpacity(0.5),
-        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           const Spacer(),
           Text(
             value,
             style: const TextStyle(
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
             ),
           ),

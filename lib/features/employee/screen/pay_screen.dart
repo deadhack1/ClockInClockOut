@@ -38,7 +38,7 @@ class PayScreen extends ConsumerWidget {
                 color: cs.surface,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: cs.outlineVariant.withOpacity(0.5),
+                  color: cs.outlineVariant.withValues(alpha: 0.5),
                 ),
               ),
               child: Column(
@@ -79,11 +79,11 @@ class PayScreen extends ConsumerWidget {
                 mainAxisSpacing: 12,
                 childAspectRatio: 1.35,
                 children: [
-                  _PayStatCard(
+                  const _PayStatCard(
                     title: 'Hourly Rate',
                     value: '\$20/hr',
                   ),
-                  _PayStatCard(
+                  const _PayStatCard(
                     title: 'OT Rate',
                     value: '\$30/hr',
                   ),
@@ -124,7 +124,7 @@ class _PayStatCard extends StatelessWidget {
         color: cs.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: cs.outlineVariant.withOpacity(0.5),
+          color: cs.outlineVariant.withValues(alpha: 0.5),
         ),
       ),
       child: Column(
