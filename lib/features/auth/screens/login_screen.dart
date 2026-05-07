@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../providers/auth_providers.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -91,6 +92,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('Sign In'),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () => context.push('/signup'),
+                child: const Text('Create an Organization'),
               ),
             ],
           ),

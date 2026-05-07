@@ -1,20 +1,191 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/formatters/duration_formatter.dart';
+import '../../../core/utils/crypto_utils.dart';
+import '../../auth/models/profile.dart';
+import '../../auth/providers/auth_providers.dart';
+import '../controller/pay_controller.dart';
 import '../controller/shift_controller.dart';
+import '../providers/repository_providers.dart';
 
 
-class ClockScreen extends ConsumerWidget {
+class ClockScreen extends ConsumerStatefulWidget {
   const ClockScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ClockScreen> createState() => _ClockScreenState();
+}
+
+class _ClockScreenState extends ConsumerState<ClockScreen> {
+  final _passwordController = TextEditingController();
+  Timer? _inactivityTimer;
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _inactivityTimer?.cancel();
+    super.dispose();
+  }
+
+  void _resetInactivityTimer() {
+    _inactivityTimer?.cancel();
+    // Auto-logout after 60 seconds of inactivity
+    _inactivityTimer = Timer(const Duration(seconds: 60), () {
+      if (mounted && ref.read(selectedKioskEmployeeProvider) != null) {
+        ref.read(selectedKioskEmployeeProvider.notifier).state = null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Logged out due to inactivity')),
+        );
+      }
+    });
+  }
+  void _setPunchCodeDialog(Profile employee){
+    showDialog(context: context, builder: (context) => AlertDialog(
+      title: Text('Set Punch Code for ${employee.fullName}'),
+      content: TextField(
+        controller: _passwordController,
+        decoration: const InputDecoration(labelText: 'Enter New Punch Code'),
+        obscureText: true,
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        ElevatedButton(onPressed: () {
+          final newCode = _passwordController.text.trim();
+          if(newCode.isEmpty){
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Punch code cannot be empty')));
+            return;
+          }
+          final hashedCode = CryptoUtils.hashPassword(newCode);
+          var result=ref.read(authRepositoryProvider).updateEmployee(
+            employee.id,
+            {'encrypted_punch_code': hashedCode},
+          );
+          print(result.toString());
+
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Punch code updated successfully')));
+          _passwordController.clear();
+          Navigator.pop(context);
+        }, child: const Text('Set Code')),
+      ],
+    ),
+    );
+
+  }
+
+  void _showPunchCodeDialog(Profile employee) {
+    print("${employee.toJson()}");
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Login as ${employee.fullName}'),
+        content: TextField(
+          controller: _passwordController,
+          decoration: const InputDecoration(labelText: 'Enter Password'),
+          obscureText: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final hashedPassword = employee.password;
+              if(hashedPassword==null)
+                {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No password set for this employee')),
+                  );
+                  return _setPunchCodeDialog(employee);
+                }
+              if (hashedPassword != null && 
+                  CryptoUtils.verifyPassword(_passwordController.text, hashedPassword)) {
+                ref.read(selectedKioskEmployeeProvider.notifier).state = employee;
+                _passwordController.clear();
+                Navigator.pop(context);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Incorrect password')),
+                );
+              }
+            },
+            child: const Text('Login'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
+    final selectedEmployee = ref.watch(selectedKioskEmployeeProvider);
+    final employeesAsync = ref.watch(organizationEmployeesProvider);
+
+    if (selectedEmployee == null) {
+      _inactivityTimer?.cancel();
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Select Employee', style: TextStyle(fontWeight: FontWeight.w900)),
+        ),
+        body: employeesAsync.when(
+          data: (employees) => ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: employees.length,
+            itemBuilder: (context, index) {
+              final emp = employees[index];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.person)),
+                  title: Text(emp.fullName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showPunchCodeDialog(emp),
+                ),
+              );
+            },
+          ),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('Error loading employees: $e')),
+        ),
+      );
+    }
+
     final shift = ref.watch(shiftControllerProvider);
     final ctrl = ref.read(shiftControllerProvider.notifier);
+
+    Future<void> handleClockAction() async {
+      try {
+        if (shift.isClockedIn) {
+          ctrl.clockOut(selectedEmployee.id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Clocked out successfully! Returning to menu...'), duration: Duration(seconds: 2)),
+          );
+        } else {
+          ctrl.clockIn(selectedEmployee.id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Clocked in successfully! Returning to menu...'), duration: Duration(seconds: 2)),
+          );
+        }
+        
+        // Auto-logout after 2.5 seconds to allow user to see the change
+        await Future.delayed(const Duration(milliseconds: 2500));
+        if (mounted && ref.read(selectedKioskEmployeeProvider) == selectedEmployee) {
+          ref.read(selectedKioskEmployeeProvider.notifier).state = null;
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      }
+    }
 
     final statusText = shift.isClockedIn
         ? (shift.onBreak ? 'On break' : 'On shift')
@@ -30,22 +201,40 @@ class ClockScreen extends ConsumerWidget {
     final breakPrimaryEnabled = shift.isClockedIn && !shift.onBreak;
     final breakEndEnabled = shift.isClockedIn && shift.onBreak;
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    final paySummary = ref.watch(paySummaryProvider);
+    final currencyFormat = NumberFormat.simpleCurrency();
+
+    _resetInactivityTimer();
+
+    return GestureDetector(
+      onTap: _resetInactivityTimer,
+      onPanDown: (_) => _resetInactivityTimer(),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             Row(
               children: [
-                Text(
-                  'Clock',
-                  style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Hello, ${selectedEmployee.fullName}',
+                      style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    Text(
+                      'Clocking System',
+                      style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ],
                 ),
                 const Spacer(),
                 IconButton(
-                  onPressed: () {},
-                  icon: Icon(Icons.person_outline, color: cs.onSurfaceVariant),
+                  onPressed: () => ref.read(selectedKioskEmployeeProvider.notifier).state = null,
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Switch User',
                 ),
               ],
             ),
@@ -127,13 +316,7 @@ class ClockScreen extends ConsumerWidget {
             SizedBox(
               height: 58,
               child: FilledButton.icon(
-                onPressed: () {
-                  if (shift.isClockedIn) {
-                    ctrl.clockOut();
-                  } else {
-                    ctrl.clockIn();
-                  }
-                },
+                onPressed: handleClockAction,
                 icon: Icon(primaryIcon),
                 label: Text(
                   primaryLabel,
@@ -167,7 +350,7 @@ class ClockScreen extends ConsumerWidget {
 
             const SizedBox(height: 18),
 
-            // Stats (still placeholder, but wired to shift time)
+            // Stats wired to paySummaryProvider
             Expanded(
               child: GridView.count(
                 crossAxisCount: 2,
@@ -176,17 +359,18 @@ class ClockScreen extends ConsumerWidget {
                 childAspectRatio: 1.35,
                 children: [
                   _MiniCard(title: "Today’s Hours", value: formatHm(shift.elapsed)),
-                  const _MiniCard(title: "This Week", value: "0h 0m"),
-                  const _MiniCard(title: "Overtime", value: "0h 0m"),
-                  const _MiniCard(title: "Next Pay", value: "\$0.00"),
+                  _MiniCard(title: "This Week", value: formatHm(paySummary.totalWorked)),
+                  _MiniCard(title: "Overtime", value: formatHm(paySummary.overtime)),
+                  _MiniCard(title: "Est. Pay", value: currencyFormat.format(paySummary.estimatedPay)),
                 ],
               ),
             ),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class _MiniCard extends StatelessWidget {

@@ -1,11 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../admin_payroll_summary.dart';
+import '../models/admin_timesheet_entry.dart';
 import '../../../core/utils/date_utils.dart';
 import 'admin_timesheet_provider.dart';
-
-const double hourlyRate = 20.0;
-const double overtimeMultiplier = 1.5;
 
 final adminPayrollProvider = Provider<List<AdminPayrollSummary>>((ref) {
   final entriesAsync = ref.watch(adminTimesheetProvider);
@@ -14,7 +12,7 @@ final adminPayrollProvider = Provider<List<AdminPayrollSummary>>((ref) {
     loading: () => [],
     error: (_, __) => [],
     data: (entries) {
-      final Map<String, List<dynamic>> grouped = {};
+      final Map<String, List<AdminTimesheetEntry>> grouped = {};
 
       // 1. group by employee
       for (final e in entries) {
@@ -27,7 +25,7 @@ final adminPayrollProvider = Provider<List<AdminPayrollSummary>>((ref) {
         final shifts = empEntry.value;
 
         // 2. group by week
-        final Map<DateTime, List<dynamic>> weekly = {};
+        final Map<DateTime, List<AdminTimesheetEntry>> weekly = {};
 
         for (final s in shifts) {
           final week = startOfWeek(s.clockIn);
@@ -36,37 +34,48 @@ final adminPayrollProvider = Provider<List<AdminPayrollSummary>>((ref) {
           weekly[week]!.add(s);
         }
 
-        int totalMinutes = 0;
-        int overtimeMinutes = 0;
+        double totalPay = 0;
+        Duration totalWorkedDuration = Duration.zero;
+        Duration totalOvertimeDuration = Duration.zero;
 
         // 3. calculate per week
         for (final weekEntry in weekly.entries) {
           final weekShifts = weekEntry.value;
 
-          final weekMinutes = weekShifts.fold<num>(
+          final weekMinutes = weekShifts.fold<int>(
             0,
             (sum, s) => sum + s.worked.inMinutes,
           );
 
-          if (weekMinutes > 2400) {
-            overtimeMinutes += (weekMinutes.toInt() - 2400);
-            totalMinutes += 2400;
+          // We'll use the rate from the first shift of the week for simplicity, 
+          // or ideally, rate changes should be handled per shift.
+          final firstShift = weekShifts.first;
+          final hourlyRate = firstShift.hourlyRateCents / 100.0;
+          final multiplier = firstShift.overtimeMultiplier;
+
+          int weeklyRegularMinutes = 0;
+          int weeklyOvertimeMinutes = 0;
+
+          if (weekMinutes > 2400) { // 40 hours
+            weeklyOvertimeMinutes = weekMinutes - 2400;
+            weeklyRegularMinutes = 2400;
           } else {
-            totalMinutes += weekMinutes.toInt();
+            weeklyRegularMinutes = weekMinutes;
           }
+
+          final weeklyPay = (weeklyRegularMinutes / 60.0 * hourlyRate) + 
+                            (weeklyOvertimeMinutes / 60.0 * hourlyRate * multiplier);
+          
+          totalPay += weeklyPay;
+          totalWorkedDuration += Duration(minutes: weekMinutes);
+          totalOvertimeDuration += Duration(minutes: weeklyOvertimeMinutes);
         }
-
-        final regularMinutes = totalMinutes;
-
-        final regularPay = (regularMinutes / 60) * hourlyRate;
-        final overtimePay =
-            (overtimeMinutes / 60) * hourlyRate * overtimeMultiplier;
 
         return AdminPayrollSummary(
           employeeName: name,
-          totalWorked: Duration(minutes: totalMinutes + overtimeMinutes),
-          overtime: Duration(minutes: overtimeMinutes),
-          totalPay: regularPay + overtimePay,
+          totalWorked: totalWorkedDuration,
+          overtime: totalOvertimeDuration,
+          totalPay: totalPay,
         );
       }).toList();
     },

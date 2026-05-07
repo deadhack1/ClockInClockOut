@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/providers/auth_providers.dart';
 import '../models/timesheet_entry.dart';
 import '../providers/repository_providers.dart';
 
@@ -11,30 +12,27 @@ AsyncNotifierProvider<TimesheetController, List<TimesheetEntry>>(
 class TimesheetController extends AsyncNotifier<List<TimesheetEntry>> {
   @override
   Future<List<TimesheetEntry>> build() async {
-    return _repo.fetchEntries();
+    final employee = ref.watch(selectedKioskEmployeeProvider);
+    if (employee == null) return [];
+    
+    return _repo.fetchEntries(employee.id);
   }
 
   get _repo => ref.read(timesheetRepositoryProvider);
 
   Future<void> refreshEntries() async {
+    final employee = ref.read(selectedKioskEmployeeProvider);
+    if (employee == null) {
+      state = const AsyncValue.data([]);
+      return;
+    }
+    
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _repo.fetchEntries());
+    state = await AsyncValue.guard(() => _repo.fetchEntries(employee.id));
   }
 
   Future<void> addEntry(TimesheetEntry entry) async {
-    print("Trying to add the entry");
-    try {
-      await _repo.addEntry(
-        clockIn: entry.clockIn,
-        clockOut: entry.clockOut,
-        worked: entry.worked,
-        breaks: entry.breaks,
-      );
-    } on Exception catch (e) {
-      print("the exact nature of the exception is $e");
-      // TODO
-    }
-
+    await _repo.addEntry(entry);
     await refreshEntries();
   }
 

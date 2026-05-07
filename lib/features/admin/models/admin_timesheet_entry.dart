@@ -6,6 +6,8 @@ class AdminTimesheetEntry {
   final DateTime clockOut;
   final Duration worked;
   final Duration breaks;
+  final int hourlyRateCents;
+  final double overtimeMultiplier;
 
   AdminTimesheetEntry({
     required this.id,
@@ -15,5 +17,7 @@ class AdminTimesheetEntry {
     required this.clockOut,
     required this.worked,
     required this.breaks,
+    required this.hourlyRateCents,
+    required this.overtimeMultiplier,
   });
 }

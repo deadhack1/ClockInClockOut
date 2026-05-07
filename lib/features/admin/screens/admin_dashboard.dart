@@ -6,6 +6,8 @@ import '../../../core/formatters/duration_formatter.dart';
 import '../providers/admin_payroll_provider.dart';
 import '../providers/admin_timesheet_provider.dart';
 
+import '../providers/payroll_export_provider.dart';
+
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
 
@@ -23,11 +25,19 @@ class AdminDashboardScreen extends ConsumerWidget {
           'Admin Dashboard',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/employee/clock'),
-        ),
       ),
+      //   leading: IconButton(
+      //     icon: const Icon(Icons.arrow_back),
+      //     onPressed: () => context.go('/employee/clock'),
+      //   ),
+      //   actions: [
+      //     IconButton(
+      //       icon: const Icon(Icons.file_download),
+      //       tooltip: 'Export Payroll',
+      //       onPressed: () => ref.read(payrollExportProvider).exportToCsv(),
+      //     ),
+      //   ],
+      // ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),

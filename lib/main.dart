@@ -6,6 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app/app.dart';
 import 'core/providers/shared_prefs_provider.dart';
 
+import 'core/providers/logger_observer.dart';
+import 'features/employee/providers/repository_providers.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -16,12 +19,21 @@ Future<void> main() async {
     anonKey: 'sb_publishable_soP1ru4_Ebt1-Gj6H2vpIA_QKElv4Qk',
   );
 
+  final container = ProviderContainer(
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(prefs),
+    ],
+    observers: [LoggerObserver()],
+  );
+
+  // Attempt to sync offline entries on startup
+  container.read(syncRepositoryProvider).attemptSync();
+
   runApp(
-    ProviderScope(
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(prefs),
-      ],
+    UncontrolledProviderScope(
+      container: container,
       child: const ClockInClockOut(),
+      
     ),
   );
 }

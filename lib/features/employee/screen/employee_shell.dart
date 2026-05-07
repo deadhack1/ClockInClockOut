@@ -14,6 +14,17 @@ class EmployeeShell extends ConsumerWidget {
     final isAdmin = profileAsync.valueOrNull?.role == UserRole.admin;
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Employee Dashboard'),
+        actions: [
+          IconButton(
+            onPressed: () {
+              ref.read(authRepositoryProvider).signOut();
+            },
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: navigationShell.currentIndex,

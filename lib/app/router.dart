@@ -1,10 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'router_utils.dart';
 import '../features/admin/screens/admin_dashboard.dart';
+import '../features/admin/screens/admin_shell.dart';
+import '../features/admin/screens/manage_employees_screen.dart';
+import '../features/admin/screens/manage_timesheets_screen.dart';
 import '../features/auth/models/profile.dart';
 import '../features/auth/providers/auth_providers.dart';
 import '../features/auth/screens/login_screen.dart';
+import '../features/auth/screens/signup_screen.dart';
 import '../features/employee/screen/clock_screen.dart';
 import '../features/employee/screen/employee_shell.dart';
 import '../features/employee/screen/pay_screen.dart';
@@ -15,27 +20,43 @@ final routerProvider = Provider<GoRouter>((ref) {
   final profileAsync = ref.watch(userProfileProvider);
 
   return GoRouter(
-    initialLocation: '/employee/clock',
+    initialLocation: '/login',
+    debugLogDiagnostics: true,
+    refreshListenable: GoRouterRefreshStream(ref.watch(authRepositoryProvider).authStateChanges),
     redirect: (context, state) {
       final authValue = authState.valueOrNull;
       final isLoggedIn = authValue?.session != null;
-      final isLoggingIn = state.matchedLocation == '/login';
+      final location = state.matchedLocation;
 
+      // 1. Handle Unauthenticated users
       if (!isLoggedIn) {
-        return isLoggingIn ? null : '/login';
+        if (location == '/login' || location == '/signup') return null;
+        return '/login';
       }
 
-      if (isLoggingIn) {
+      // 2. Handle Authenticated users - wait for profile
+      final profile = profileAsync.valueOrNull;
+      if (profile == null) {
+        // If we are logged in but don't have a profile yet, 
+        // we might be in the middle of a signup or loading.
+        // Stay where we are to avoid redirect loops.
+        return null; 
+      }
+
+      final isAdmin = profile.role == UserRole.admin;
+
+      // 3. Prevent logged in users from seeing login/signup
+      if (location == '/login' || location == '/signup') {
+        return isAdmin ? '/admin' : '/employee/clock';
+      }
+
+      // 4. Role-based protection
+      if (location.startsWith('/admin') && !isAdmin) {
         return '/employee/clock';
       }
 
-      // Role-based protection for /admin
-      if (state.matchedLocation.startsWith('/admin')) {
-        final profile = profileAsync.valueOrNull;
-        if (profile == null) return null; // Wait for profile to load
-        if (profile.role != UserRole.admin) {
-          return '/employee/clock'; // Redirect non-admins back to employee area
-        }
+      if (location.startsWith('/employee') && isAdmin) {
+        return '/admin';
       }
 
       return null;
@@ -44,6 +65,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/signup',
+        builder: (context, state) => const SignUpScreen(),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navShell) =>
@@ -75,9 +100,35 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      GoRoute(
-        path: '/admin',
-        builder: (context, state) => const AdminDashboardScreen(),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navShell) =>
+            AdminShell(navigationShell: navShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/admin',
+                builder: (context, state) => const AdminDashboardScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/admin/manage-employees',
+                builder: (context, state) => const ManageEmployeesScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/admin/manage-timesheets',
+                builder: (context, state) => const ManageTimesheetsScreen(),
+              ),
+            ],
+          ),
+        ],
       ),
     ],
   );

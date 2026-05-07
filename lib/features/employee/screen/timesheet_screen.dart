@@ -67,7 +67,7 @@ class TimesheetsScreen extends ConsumerWidget {
 
               final dateText = DateFormat('MMM d, yyyy').format(entry.clockIn);
               final inText = DateFormat('h:mm a').format(entry.clockIn);
-              final outText = DateFormat('h:mm a').format(entry.clockOut);
+              final outText = entry.clockOut != null ? DateFormat('h:mm a').format(entry.clockOut!) : '---';
 
               return Container(
                 padding: const EdgeInsets.all(16),
