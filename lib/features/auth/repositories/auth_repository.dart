@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/utils/crypto_utils.dart';
@@ -29,7 +30,14 @@ class AuthRepository {
       await _prefs.setString(_profileKey, jsonEncode(profile.toJson()));
       return profile;
     } catch (e) {
-      // Try to return cached profile if offline
+      if (e is PostgrestException && e.code == 'PGRST116') {
+        // User record not found in database (likely deleted)
+        await _prefs.remove(_profileKey);
+        // Explicitly sign out from Supabase to clear the local session
+        await _client.auth.signOut();
+        rethrow;
+      }
+      // For other errors (like network issues), try to return cached profile
       final cached = _prefs.getString(_profileKey);
       if (cached != null) {
         return Profile.fromJson(jsonDecode(cached));
@@ -63,25 +71,33 @@ class AuthRepository {
       email: email,
       password: password,
       data: {'full_name': fullName},
-    );
+    ).catchError((e)=> throw Exception("Failed to create user in auth: $e"));
 
     final user = response.user;
     if (user != null) {
+      print("failed to create the user in auth");
       // 2. Create the organization first to get its ID
-      final orgData = await _client.from('organizations').insert({
-        'name': organizationName,
-        'admin_id': user.id,
-      }).select().single();
-      
-      final orgId = orgData['id'];
+      try {
+        final orgData = await _client.from('organizations').insert({
+          'name': organizationName,
+          'admin_id': user.id,
+        }).select().single();
 
-      // 3. Create the corresponding profile entry linked to the auth user and organization
-      await _client.from('profiles').insert({
-        'id': user.id,
-        'full_name': fullName,
-        'role': 'admin',
-        'organization_id': orgId,
-      });
+        final orgId = orgData['id'];
+
+        // 3. Create the corresponding profile entry linked to the auth user and organization
+        await _client.from('profiles').insert({
+          'id': user.id,
+          'full_name': fullName,
+          'role': 'admin',
+          'organization_id': orgId,
+        });
+      } on Exception catch (e) {
+        throw e;
+        SnackBar(content: Text("Create Organization failed: $e"));
+
+        // TODO
+      }
     }
 
     return response;
@@ -100,10 +116,12 @@ class AuthRepository {
         'email': email,
         'password': password,
         'full_name': fullName,
-        'organizationId': organizationId,
-        'hourlyRateCents': hourlyRateCents,
+        'organization_id': organizationId,
+        'hourly_rate_cents': hourlyRateCents,
       },
-    );
+    ).catchError((e){
+      throw Exception("Failed to create employee via Edge Function: $e");
+    });
 
     if (response.status != 200) {
       final error = response.data?['error'] ?? 'Failed to create employee via Edge Function';

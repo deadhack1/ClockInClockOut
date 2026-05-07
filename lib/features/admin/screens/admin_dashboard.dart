@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/formatters/duration_formatter.dart';
+import '../../auth/providers/auth_providers.dart';
 import '../providers/admin_payroll_provider.dart';
 import '../providers/admin_timesheet_provider.dart';
 
@@ -25,6 +26,14 @@ class AdminDashboardScreen extends ConsumerWidget {
           'Admin Dashboard',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
+        actions: [
+          IconButton(
+            onPressed: () {
+              ref.read(authRepositoryProvider).signOut();
+            },
+            icon: const Icon(Icons.logout),
+          ),
+        ],
       ),
       //   leading: IconButton(
       //     icon: const Icon(Icons.arrow_back),
