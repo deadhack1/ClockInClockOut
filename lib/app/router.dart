@@ -20,45 +20,35 @@ final routerProvider = Provider<GoRouter>((ref) {
   final profileAsync = ref.watch(userProfileProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/',
     debugLogDiagnostics: true,
     refreshListenable: GoRouterRefreshStream(ref.watch(authRepositoryProvider).authStateChanges),
     redirect: (context, state) {
-      final authValue = authState.valueOrNull;
-      final isLoggedIn = authValue?.session != null;
+      final isLoggedIn = authState.valueOrNull?.session != null;
       final location = state.matchedLocation;
 
       // 1. Handle Unauthenticated users
       if (!isLoggedIn) {
-        if (location == '/login' || location == '/signup') return null;
-        return '/login';
+        return (location == '/login' || location == '/signup') ? null : '/login';
       }
 
       // 2. Handle Authenticated users - wait for profile
       final profile = profileAsync.valueOrNull;
-      if (profile == null) {
-        // If we are logged in but don't have a profile yet, 
-        // we might be in the middle of a signup or loading.
-        // Stay where we are to avoid redirect loops.
-        return null; 
-      }
+      if (profile == null) return null;
 
       final isAdmin = profile.role == UserRole.admin;
 
-      // 3. Prevent logged in users from seeing login/signup
-      if (location == '/login' || location == '/signup') {
+      // 3. Redirect from auth routes or root to the appropriate dashboard
+      if (location == '/login' || location == '/signup' || location == '/') {
         return isAdmin ? '/admin' : '/employee/clock';
       }
 
-      // 4. Role-based protection
+      // 4. Role-based protection: Only admins can access /admin
       if (location.startsWith('/admin') && !isAdmin) {
         return '/employee/clock';
       }
 
-      if (location.startsWith('/employee') && isAdmin) {
-        return '/admin';
-      }
-
+      // Note: We allow admins to access /employee routes (Kiosk mode)
       return null;
     },
     routes: [

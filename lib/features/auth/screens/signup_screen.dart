@@ -30,9 +30,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
             organizationName: _orgNameController.text.trim(),
           );
       
-      if (mounted) {
-        context.go('/employee/clock');
-      }
+      // Navigation is handled by the router redirect logic
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

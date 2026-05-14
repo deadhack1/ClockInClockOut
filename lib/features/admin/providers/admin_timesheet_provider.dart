@@ -18,15 +18,39 @@ class AdminTimesheetController extends AsyncNotifier<List<AdminTimesheetEntry>> 
     final supabase = ref.watch(supabaseProvider);
     final profile = await ref.watch(userProfileProvider.future);
 
-    if (profile?.organizationId == null) return [];
+    if (profile?.organizationId == null) {
+      print("no organization id found for profile: $profile");
+      return
+    [];}
 
-    try {
-      final response = await supabase
-          .from('time_entries')
-          .select(
-              '*, profiles!inner(full_name, hourly_rate_cents, overtime_multiplier, organization_id), break_entries(break_start, break_end)')
-          .eq('profiles.organization_id', profile!.organizationId!)
-          .order('clock_in', ascending: false);
+    try {final adminId = profile?.organizationId;
+
+    final response = await supabase
+        .from('time_entries')
+        .select('''
+      id,
+      employee_id,
+      clock_in,
+      clock_out,
+      status,
+      notes,
+      edited_by,
+      created_at,
+      updated_at,
+      employee:profiles!time_entries_employee_id_fkey (
+        full_name,
+        role,
+        organization:organizations!profiles_organization_id_fkey (
+          id,
+          name
+        )
+      ),
+      editor:profiles!time_entries_edited_by_fkey (
+        full_name
+      )
+    ''')
+        .eq('employee.organization.admin_id', adminId!) // ✅ org restriction
+        .order('clock_in', ascending: false);
 
       return (response as List).map((e) {
         final clockIn = DateTime.parse(e['clock_in']);
