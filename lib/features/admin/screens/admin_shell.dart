@@ -15,7 +15,13 @@ class AdminShell extends StatelessWidget {
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: (index) => navigationShell.goBranch(index),
+        onDestinationSelected: (index) {
+          if (index == 3) {
+            context.go('/employee/clock');
+          } else {
+            navigationShell.goBranch(index);
+          }
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
@@ -31,6 +37,11 @@ class AdminShell extends StatelessWidget {
             icon: Icon(Icons.history_outlined),
             selectedIcon: Icon(Icons.history),
             label: 'Timesheets',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.punch_clock_outlined),
+            selectedIcon: Icon(Icons.punch_clock),
+            label: 'Kiosk',
           ),
         ],
       ),

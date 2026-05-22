@@ -35,9 +35,4 @@ class TimesheetController extends AsyncNotifier<List<TimesheetEntry>> {
     await _repo.addEntry(entry);
     await refreshEntries();
   }
-
-  Future<void> clearAll() async {
-    await _repo.clearAll();
-    await refreshEntries();
-  }
 }

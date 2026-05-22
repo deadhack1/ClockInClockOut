@@ -9,6 +9,7 @@ import '../../auth/models/profile.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../controller/pay_controller.dart';
 import '../controller/shift_controller.dart';
+import '../providers/active_shifts_provider.dart';
 import '../providers/repository_providers.dart';
 
 class ClockScreen extends ConsumerStatefulWidget {
@@ -30,8 +31,10 @@ class _ClockScreenState extends ConsumerState<ClockScreen> {
   }
 
   void _resetInactivityTimer() {
+    final profile = ref.read(userProfileProvider).valueOrNull;
+    if (profile?.role != UserRole.admin) return;
+
     _inactivityTimer?.cancel();
-    // Auto-logout after 60 seconds of inactivity
     _inactivityTimer = Timer(const Duration(seconds: 60), () {
       if (mounted && ref.read(selectedKioskEmployeeProvider) != null) {
         ref.read(selectedKioskEmployeeProvider.notifier).state = null;
@@ -42,55 +45,9 @@ class _ClockScreenState extends ConsumerState<ClockScreen> {
     });
   }
 
-  void _setPunchCodeDialog(Profile employee) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Set Punch Code for ${employee.fullName}'),
-        content: TextField(
-          controller: _passwordController,
-          decoration: const InputDecoration(labelText: 'Enter New Punch Code'),
-          obscureText: true,
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () {
-                final newCode = _passwordController.text.trim();
-                if (newCode.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('Punch code cannot be empty')));
-                  return;
-                }
-                final hashedCode = CryptoUtils.hashPassword(newCode);
-                var result = ref.read(authRepositoryProvider).updateEmployee(
-                  employee.id,
-                  {'encrypted_punch_code': hashedCode},
-                );
-                print(result.toString());
-
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Punch code updated successfully')));
-                _passwordController.clear();
-                Navigator.pop(context);
-              },
-              child: const Text('Set Code')),
-        ],
-      ),
-    );
-  }
-
   void _showPunchCodeDialog(Profile employee) {
-    print("${employee.toJson()}");
     if (employee.password == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'No punch code set for this employee. Please set one now.')),
-      );
-      return _setPunchCodeDialog(employee);
+      _showSetPunchCodeDialog(employee);
     } else {
       showDialog(
         context: context,
@@ -100,6 +57,7 @@ class _ClockScreenState extends ConsumerState<ClockScreen> {
             controller: _passwordController,
             decoration: const InputDecoration(labelText: 'Enter Password'),
             obscureText: true,
+            autofocus: true,
           ),
           actions: [
             TextButton(
@@ -108,17 +66,8 @@ class _ClockScreenState extends ConsumerState<ClockScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                final hashedPassword = employee.password;
-                if (hashedPassword == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('No password set for this employee')),
-                  );
-                  return _setPunchCodeDialog(employee);
-                }
-                if (hashedPassword != null &&
-                    CryptoUtils.verifyPassword(
-                        _passwordController.text, hashedPassword)) {
+                if (CryptoUtils.verifyPassword(
+                    _passwordController.text, employee.password!)) {
                   ref.read(selectedKioskEmployeeProvider.notifier).state =
                       employee;
                   _passwordController.clear();
@@ -137,98 +86,55 @@ class _ClockScreenState extends ConsumerState<ClockScreen> {
     }
   }
 
+  void _showSetPunchCodeDialog(Profile employee) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Set Punch Code for ${employee.fullName}'),
+        content: TextField(
+          controller: _passwordController,
+          decoration: const InputDecoration(labelText: 'Enter New Punch Code'),
+          obscureText: true,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () {
+                final newCode = _passwordController.text.trim();
+                if (newCode.isEmpty) return;
+
+                final hashedCode = CryptoUtils.hashPassword(newCode);
+                ref.read(authRepositoryProvider).updateEmployee(
+                  employee.id,
+                  {'encrypted_punch_code': hashedCode},
+                );
+
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Punch code updated successfully')));
+                _passwordController.clear();
+                Navigator.pop(context);
+              },
+              child: const Text('Set Code')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
     final selectedEmployee = ref.watch(selectedKioskEmployeeProvider);
-    final employeesAsync = ref.watch(organizationEmployeesProvider);
+    final profile = ref.watch(userProfileProvider).valueOrNull;
 
     if (selectedEmployee == null) {
       _inactivityTimer?.cancel();
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Select Employee',
-              style: TextStyle(fontWeight: FontWeight.w900)),
-        ),
-        body: employeesAsync.when(
-          data: (employees) => ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: employees.length,
-            itemBuilder: (context, index) {
-              final emp = employees[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  leading: const CircleAvatar(child: Icon(Icons.person)),
-                  title: Text(emp.fullName,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showPunchCodeDialog(emp),
-                ),
-              );
-            },
-          ),
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error loading employees: $e')),
-        ),
-      );
-    }
-
-    final shift = ref.watch(shiftControllerProvider);
-    final ctrl = ref.read(shiftControllerProvider.notifier);
-
-    Future<void> handleClockAction() async {
-      try {
-        if (shift.isClockedIn) {
-          ctrl.clockOut(selectedEmployee.id);
-          // ScaffoldMessenger.of(context).showSnackBar(
-          //   const SnackBar(
-          //       content: Text('Clocked out successfully! cReturning to menu...'),
-          //       duration: Duration(seconds: 2)),
-          // );
-        } else {
-          ctrl.clockIn(selectedEmployee.id);
-          // ScaffoldMessenger.of(context).showSnackBar(
-          //   const SnackBar(
-          //       content: Text('Clocked in successfully! Returning to menu...'),
-          //       duration: Duration(seconds: 2)),
-          // );
-        }
-
-        // Auto-logout after 2.5 seconds to allow user to see the change
-        // await Future.delayed(const Duration(milliseconds: 2500));
-        // if (mounted &&
-        //     ref.read(selectedKioskEmployeeProvider) == selectedEmployee) {
-        //   ref.read(selectedKioskEmployeeProvider.notifier).state = null;
-        // }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }
+      if (profile?.role == UserRole.employee) {
+        return const Center(child: CircularProgressIndicator());
       }
+      return _EmployeePicker(onSelect: _showPunchCodeDialog);
     }
-
-    final statusText = shift.isClockedIn
-        ? (shift.onBreak ? 'On break' : 'On shift')
-        : 'Off shift';
-
-    final statusDot = shift.isClockedIn
-        ? (shift.onBreak ? Colors.orange : Colors.green)
-        : Colors.grey;
-
-    final primaryLabel = shift.isClockedIn ? 'Clock Out' : 'Clock In';
-    final primaryIcon =
-        shift.isClockedIn ? Icons.stop_rounded : Icons.play_arrow_rounded;
-
-    final breakPrimaryEnabled = shift.isClockedIn && !shift.onBreak;
-    final breakEndEnabled = shift.isClockedIn && shift.onBreak;
-
-    final paySummary = ref.watch(paySummaryProvider);
-    final currencyFormat = NumberFormat.simpleCurrency();
 
     _resetInactivityTimer();
 
@@ -236,185 +142,365 @@ class _ClockScreenState extends ConsumerState<ClockScreen> {
       onTap: _resetInactivityTimer,
       onPanDown: (_) => _resetInactivityTimer(),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Hello, ${selectedEmployee.fullName}',
-                        style: theme.textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w900),
-                      ),
-                      Text(
-                        'Clocking System',
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: cs.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => ref
-                        .read(selectedKioskEmployeeProvider.notifier)
-                        .state = null,
-                    icon: const Icon(Icons.logout),
-                    tooltip: 'Switch User',
-                  ),
-                ],
-              ),
+              _Header(employee: selectedEmployee),
               const SizedBox(height: 12),
-
-              // Status card
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: cs.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                      color: cs.outlineVariant.withValues(alpha: 0.5)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                          color: statusDot, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Status: $statusText',
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    Text('Today', style: TextStyle(color: cs.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-
+              const _StatusCard(),
               const SizedBox(height: 16),
-
-              // Timer card
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: cs.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                      color: cs.outlineVariant.withValues(alpha: 0.5)),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      shift.isClockedIn ? 'Shift Timer' : 'Ready',
-                      style: TextStyle(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      formatHms(shift.elapsed),
-                      style: const TextStyle(
-                        fontSize: 44,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      shift.isClockedIn
-                          ? (shift.onBreak ? 'Break running' : 'Tracking time')
-                          : 'Clock in to start tracking',
-                      style: TextStyle(color: cs.onSurfaceVariant),
-                    ),
-                    if (shift.breakElapsed > Duration.zero) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        'Breaks: ${formatHm(shift.breakElapsed)}',
-                        style: TextStyle(
-                            color: cs.onSurfaceVariant,
-                            fontWeight: FontWeight.w700),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
+              const _TimerCard(),
               const SizedBox(height: 18),
-
-              // Clock In / Out button
-              SizedBox(
-                height: 58,
-                child: FilledButton.icon(
-                  onPressed: handleClockAction,
-                  icon: Icon(primaryIcon),
-                  label: Text(
-                    primaryLabel,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Break buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: breakPrimaryEnabled ? ctrl.startBreak : null,
-                      icon: const Icon(Icons.coffee),
-                      label: const Text('Start Break'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: breakEndEnabled ? ctrl.endBreak : null,
-                      icon: const Icon(Icons.stop_circle_outlined),
-                      label: const Text('End Break'),
-                    ),
-                  ),
-                ],
-              ),
-
+              _ClockActions(employeeId: selectedEmployee.id),
               const SizedBox(height: 18),
-
-              // Stats wired to paySummaryProvider
-              Expanded(
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.35,
-                  children: [
-                    _MiniCard(
-                        title: "Today’s Hours", value: formatHm(shift.elapsed)),
-                    _MiniCard(
-                        title: "This Week",
-                        value: formatHm(paySummary.totalWorked)),
-                    _MiniCard(
-                        title: "Overtime",
-                        value: formatHm(paySummary.overtime)),
-                    _MiniCard(
-                        title: "Est. Pay",
-                        value: currencyFormat.format(paySummary.estimatedPay)),
-                  ],
-                ),
-              ),
+              const _StatsGrid(),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _EmployeePicker extends ConsumerWidget {
+  final Function(Profile) onSelect;
+  const _EmployeePicker({required this.onSelect});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final employeesAsync = ref.watch(organizationEmployeesProvider);
+    final activeShiftsAsync = ref.watch(activeShiftsProvider);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return employeesAsync.when(
+      data: (employees) => ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: employees.length,
+        itemBuilder: (context, index) {
+          final emp = employees[index];
+          final activeShifts = activeShiftsAsync.valueOrNull ?? {};
+          final clockInTime = activeShifts[emp.id];
+          final isClockedIn = clockInTime != null;
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            elevation: isClockedIn ? 2 : 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: isClockedIn
+                    ? Colors.green.withValues(alpha: 0.5)
+                    : cs.outlineVariant.withValues(alpha: 0.3),
+                width: isClockedIn ? 2 : 1,
+              ),
+            ),
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              leading: CircleAvatar(
+                backgroundColor: isClockedIn
+                    ? Colors.green.withValues(alpha: 0.1)
+                    : cs.surfaceContainerHigh,
+                child: Icon(
+                  Icons.person,
+                  color: isClockedIn ? Colors.green : cs.onSurfaceVariant,
+                ),
+              ),
+              title: Text(
+                emp.fullName,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isClockedIn ? Colors.green.shade800 : null,
+                ),
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (isClockedIn)
+                    Text(
+                      'Clocked in at ${DateFormat('h:mm a').format(clockInTime!)}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    )
+                  else
+                    const Text('Not clocked in', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _QuickAction(
+                    isClockedIn: isClockedIn,
+                    onPressed: () async {
+                      final repo = ref.read(timesheetRepositoryProvider);
+                      if (isClockedIn) {
+                        await repo.clockOut(emp.id);
+                      } else {
+                        await repo.clockIn(emp.id);
+                      }
+                      ref.invalidate(activeShiftsProvider);
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
+              onTap: () => onSelect(emp),
+            ),
+          );
+        },
+      ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Error: $e')),
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  final bool isClockedIn;
+  final VoidCallback onPressed;
+
+  const _QuickAction({required this.isClockedIn, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton.filledTonal(
+      onPressed: onPressed,
+      style: IconButton.styleFrom(
+        backgroundColor: isClockedIn
+            ? Colors.red.withValues(alpha: 0.1)
+            : Colors.green.withValues(alpha: 0.1),
+        foregroundColor: isClockedIn ? Colors.red : Colors.green,
+      ),
+      icon: Icon(isClockedIn ? Icons.stop : Icons.play_arrow),
+      tooltip: isClockedIn ? 'Quick Clock Out' : 'Quick Clock In',
+    );
+  }
+}
+
+class _Header extends ConsumerWidget {
+  final Profile employee;
+  const _Header({required this.employee});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final isAdmin =
+        ref.watch(userProfileProvider).valueOrNull?.role == UserRole.admin;
+
+    return Row(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Hello, ${employee.fullName}',
+                style: theme.textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            Text('Clocking System',
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          ],
+        ),
+        const Spacer(),
+        if (isAdmin)
+          IconButton(
+            onPressed: () =>
+                ref.read(selectedKioskEmployeeProvider.notifier).state = null,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Switch User',
+          ),
+      ],
+    );
+  }
+}
+
+class _StatusCard extends ConsumerWidget {
+  const _StatusCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shift = ref.watch(shiftControllerProvider);
+    final cs = Theme.of(context).colorScheme;
+
+    final statusText = shift.isClockedIn
+        ? (shift.onBreak ? 'On break' : 'On shift')
+        : 'Off shift';
+    final statusDot = shift.isClockedIn
+        ? (shift.onBreak ? Colors.orange : Colors.green)
+        : Colors.grey;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: statusDot, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Status: $statusText',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+                if (shift.isClockedIn && shift.clockInAt != null)
+                  Text(
+                    'Started at ${DateFormat('h:mm a').format(shift.clockInAt!)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Text('Today', style: TextStyle(color: cs.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimerCard extends ConsumerWidget {
+  const _TimerCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shift = ref.watch(shiftControllerProvider);
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        children: [
+          Text(shift.isClockedIn ? 'Shift Timer' : 'Ready',
+              style: TextStyle(
+                  color: cs.onSurfaceVariant, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 10),
+          Text(
+            formatHms(shift.elapsed),
+            style: const TextStyle(
+                fontSize: 44, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            shift.isClockedIn
+                ? (shift.onBreak ? 'Break running' : 'Tracking time')
+                : 'Clock in to start tracking',
+            style: TextStyle(color: cs.onSurfaceVariant),
+          ),
+          if (shift.breakElapsed > Duration.zero) ...[
+            const SizedBox(height: 10),
+            Text('Breaks: ${formatHm(shift.breakElapsed)}',
+                style: TextStyle(
+                    color: cs.onSurfaceVariant, fontWeight: FontWeight.w700)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ClockActions extends ConsumerWidget {
+  final String employeeId;
+  const _ClockActions({required this.employeeId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shift = ref.watch(shiftControllerProvider);
+    final ctrl = ref.read(shiftControllerProvider.notifier);
+
+    final primaryLabel = shift.isClockedIn ? 'Clock Out' : 'Clock In';
+    final primaryIcon =
+        shift.isClockedIn ? Icons.stop_rounded : Icons.play_arrow_rounded;
+
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 58,
+          child: FilledButton.icon(
+            onPressed: () => shift.isClockedIn
+                ? ctrl.clockOut(employeeId)
+                : ctrl.clockIn(employeeId),
+            icon: Icon(primaryIcon),
+            label: Text(primaryLabel,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: (shift.isClockedIn && !shift.onBreak)
+                    ? ctrl.startBreak
+                    : null,
+                icon: const Icon(Icons.coffee),
+                label: const Text('Start Break'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: (shift.isClockedIn && shift.onBreak)
+                    ? ctrl.endBreak
+                    : null,
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text('End Break'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _StatsGrid extends ConsumerWidget {
+  const _StatsGrid();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shift = ref.watch(shiftControllerProvider);
+    final paySummary = ref.watch(paySummaryProvider);
+    final currencyFormat = NumberFormat.simpleCurrency();
+
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
+      childAspectRatio: 2.1,
+      children: [
+        _MiniCard(title: "Today’s Hours", value: formatHm(shift.elapsed)),
+        _MiniCard(title: "This Week", value: formatHm(paySummary.totalWorked)),
+        _MiniCard(title: "Overtime", value: formatHm(paySummary.overtime)),
+        _MiniCard(
+            title: "Est. Pay",
+            value: currencyFormat.format(paySummary.estimatedPay)),
+      ],
     );
   }
 }
@@ -429,22 +515,26 @@ class _MiniCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: cs.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-          const Spacer(),
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11)),
           Text(value,
               style:
-                  const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
         ],
       ),
     );

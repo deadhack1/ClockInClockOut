@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/providers/shared_prefs_provider.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../models/timesheet_entry.dart';
+import '../providers/active_shifts_provider.dart';
 import '../providers/repository_providers.dart';
 import 'timesheet_controller.dart';
 
@@ -80,7 +81,23 @@ class ShiftController extends Notifier<ShiftState> {
       return const ShiftState.initial();
     }
 
-    // Load persisted state for THIS employee
+    // Try to load from the DB (active shifts) first to stay synced in Kiosk mode
+    final activeShifts = ref.watch(activeShiftsProvider).valueOrNull ?? {};
+    final dbClockIn = activeShifts[employeeId];
+
+    if (dbClockIn != null) {
+      Future.microtask(() => _startTicker());
+      return ShiftState(
+        isClockedIn: true,
+        clockInAt: dbClockIn,
+        elapsed: _calculateElapsed(dbClockIn, Duration.zero, null),
+        onBreak: false, 
+        breakStartedAt: null,
+        breakElapsed: Duration.zero,
+      );
+    }
+
+    // Load persisted state for THIS employee (Fallback/Offline)
     final clockInMs = _prefs.getInt(_key(_baseKeyClockInAt));
     final breakStartedMs = _prefs.getInt(_key(_baseKeyBreakStartedAt));
     final breakElapsedMs = _prefs.getInt(_key(_baseKeyBreakElapsed)) ?? 0;

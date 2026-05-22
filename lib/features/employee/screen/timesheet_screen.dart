@@ -20,21 +20,6 @@ class TimesheetsScreen extends ConsumerWidget {
           'Timesheets',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
-        actions: [
-          entriesAsync.when(
-            data: (entries) => entries.isNotEmpty
-                ? TextButton.icon(
-                    onPressed: () {
-                      ref.read(timesheetControllerProvider.notifier).clearAll();
-                    },
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Clear'),
-                  )
-                : const SizedBox.shrink(),
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-          ),
-        ],
       ),
       body: entriesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

@@ -31,6 +31,57 @@ class TimesheetRepository {
     }
   }
 
+  Future<void> clockIn(String employeeId) async {
+    print("Lets clock in employee: $employeeId");
+    await client.from('time_entries').insert({
+      'employee_id': employeeId,
+      'clock_in': DateTime.now().toIso8601String(),
+      'status': 'active',
+    });
+  }
+
+  Future<void> clockOut(String employeeId, {Duration breaks = Duration.zero}) async {
+    // Find the active entry
+    final activeEntry = await client
+        .from('time_entries')
+        .select('id, clock_in')
+        .eq('employee_id', employeeId)
+        .isFilter('clock_out', null)
+        .order('clock_in', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (activeEntry != null) {
+      final now = DateTime.now();
+      await client.from('time_entries').update({
+        'clock_out': now.toIso8601String(),
+        'status': 'completed',
+      }).eq('id', activeEntry['id']);
+
+      if (breaks > Duration.zero) {
+        final clockIn = DateTime.parse(activeEntry['clock_in']);
+        await client.from('break_entries').insert({
+          'time_entry_id': activeEntry['id'],
+          'break_start': clockIn.toIso8601String(),
+          'break_end': clockIn.add(breaks).toIso8601String(),
+        });
+      }
+    }
+  }
+
+  Future<Map<String, DateTime>> fetchActiveShifts() async {
+    final response = await client
+        .from('time_entries')
+        .select('employee_id, clock_in')
+        .isFilter('clock_out', null);
+    
+    final Map<String, DateTime> activeShifts = {};
+    for (var entry in (response as List)) {
+      activeShifts[entry['employee_id']] = DateTime.parse(entry['clock_in']);
+    }
+    return activeShifts;
+  }
+
   Future<List<TimesheetEntry>> fetchEntries(String userId) async {
     final response = await client
         .from('time_entries')
@@ -51,32 +102,5 @@ class TimesheetRepository {
 
       return TimesheetEntry.fromJson(e, totalBreaks: totalBreaks);
     }).toList();
-  }
-
-  Future<void> clearAll() async {
-    final userId = client.auth.currentUser!.id;
-
-    try {
-      final userEntries = await client
-          .from('time_entries')
-          .select('id')
-          .eq('employee_id', userId);
-
-      final entryIds = (userEntries as List).map((e) => e['id']).toList();
-
-      if (entryIds.isNotEmpty) {
-        await client
-            .from('break_entries')
-            .delete()
-            .inFilter('time_entry_id', entryIds);
-
-        await client
-            .from('time_entries')
-            .delete().inFilter('id', entryIds);
-      }
-    } catch (e) {
-      debugPrint("Failed to clear entries: $e");
-      rethrow;
-    }
   }
 }

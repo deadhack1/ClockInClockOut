@@ -35,18 +35,6 @@ class AdminDashboardScreen extends ConsumerWidget {
           ),
         ],
       ),
-      //   leading: IconButton(
-      //     icon: const Icon(Icons.arrow_back),
-      //     onPressed: () => context.go('/employee/clock'),
-      //   ),
-      //   actions: [
-      //     IconButton(
-      //       icon: const Icon(Icons.file_download),
-      //       tooltip: 'Export Payroll',
-      //       onPressed: () => ref.read(payrollExportProvider).exportToCsv(),
-      //     ),
-      //   ],
-      // ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),

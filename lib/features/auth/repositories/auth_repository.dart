@@ -1,8 +1,6 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../core/utils/crypto_utils.dart';
 import '../models/profile.dart';
 
 class AuthRepository {
@@ -33,7 +31,6 @@ class AuthRepository {
       if (e is PostgrestException && e.code == 'PGRST116') {
         // User record not found in database (likely deleted)
         await _prefs.remove(_profileKey);
-        // Explicitly sign out from Supabase to clear the local session
         await _client.auth.signOut();
         rethrow;
       }
@@ -44,20 +41,6 @@ class AuthRepository {
       }
       rethrow;
     }
-  }
-
-  Future<void> createOrganization(String name, String adminId) async {
-    final orgData = await _client.from('organizations').insert({
-      'name': name,
-      'admin_id': adminId,
-    }).select().single();
-
-    final orgId = orgData['id'];
-
-    await _client.from('profiles').update({
-      'organization_id': orgId,
-      'role': 'admin',
-    }).eq('id', adminId);
   }
 
   Future<AuthResponse> signUpAdmin({
@@ -71,33 +54,25 @@ class AuthRepository {
       email: email,
       password: password,
       data: {'full_name': fullName},
-    ).catchError((e)=> throw Exception("Failed to create user in auth: $e"));
+    );
 
     final user = response.user;
     if (user != null) {
-      print("failed to create the user in auth");
       // 2. Create the organization first to get its ID
-      try {
-        final orgData = await _client.from('organizations').insert({
-          'name': organizationName,
-          'admin_id': user.id,
-        }).select().single();
+      final orgData = await _client.from('organizations').insert({
+        'name': organizationName,
+        'admin_id': user.id,
+      }).select().single();
 
-        final orgId = orgData['id'];
+      final orgId = orgData['id'];
 
-        // 3. Create the corresponding profile entry linked to the auth user and organization
-        await _client.from('profiles').insert({
-          'id': user.id,
-          'full_name': fullName,
-          'role': 'admin',
-          'organization_id': orgId,
-        });
-      } on Exception catch (e) {
-        throw e;
-        SnackBar(content: Text("Create Organization failed: $e"));
-
-        // TODO
-      }
+      // 3. Create the corresponding profile entry linked to the auth user and organization
+      await _client.from('profiles').insert({
+        'id': user.id,
+        'full_name': fullName,
+        'role': 'admin',
+        'organization_id': orgId,
+      });
     }
 
     return response;
@@ -119,12 +94,10 @@ class AuthRepository {
         'organization_id': organizationId,
         'hourly_rate_cents': hourlyRateCents,
       },
-    ).catchError((e){
-      throw Exception("Failed to create employee via Edge Function: $e");
-    });
+    );
 
     if (response.status != 200) {
-      final error = response.data?['error'] ?? 'Failed to create employee via Edge Function';
+      final error = response.data?['error'] ?? 'Failed to create employee';
       throw Exception(error);
     }
   }
@@ -160,30 +133,4 @@ class AuthRepository {
   Future<void> signOut() async {
     await _client.auth.signOut();
   }
-
-  Future<AuthResponse> signUp({
-    required String email,
-    required String password,
-    required String fullName,
-  }) async {
-    // 1. Create the user auth profile in Supabase Auth
-    final response = await _client.auth.signUp(
-      email: email,
-      password: password,
-      data: {'full_name': fullName},
-    );
-print("adding the user to the profile table");
-    if (response.user != null) {
-      // 2. Add its entry to profiles table
-      await _client.from('profiles').insert({
-        'id': response.user!.id,
-        'full_name': fullName,
-        'role': 'employee',
-      });
-    }
-
-    return response;
-  }
-
-
 }
